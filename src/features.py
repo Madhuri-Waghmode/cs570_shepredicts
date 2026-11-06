@@ -6,6 +6,7 @@ docstring states. The other functions are complete. build_datasets calls them in
 other rows. The team may add functions and columns.
 """
 import pyspark.sql.functions as F
+from pyspark.sql import Window
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler
 
@@ -26,7 +27,23 @@ def add_history(train_df, rows_df=None):
          once and keep its existing columns and values. Use count 0 and average null when no allowed history exists.
     """
 
-    raise NotImplementedError("add_history")
+    if rows_df is None:
+        # timestamps are whole seconds, so a range ending at -1 excludes the current row and same-second ratings
+        user_w = Window.partitionBy("UserID").orderBy("Timestamp").rangeBetween(Window.unboundedPreceding, -1)
+        movie_w = Window.partitionBy("MovieID").orderBy("Timestamp").rangeBetween(Window.unboundedPreceding, -1)
+        return (train_df.withColumn("user_count", F.count("Rating").over(user_w))
+                        .withColumn("user_avg", F.avg("Rating").over(user_w))
+                        .withColumn("movie_count", F.count("Rating").over(movie_w))
+                        .withColumn("movie_avg", F.avg("Rating").over(movie_w)))
+
+    # scoring rows: all training ratings, none from rows_df; left joins keep users and movies with no history
+    user_hist = train_df.groupBy("UserID").agg(F.count("Rating").alias("user_count"),
+                                               F.avg("Rating").alias("user_avg"))
+    movie_hist = train_df.groupBy("MovieID").agg(F.count("Rating").alias("movie_count"),
+                                                 F.avg("Rating").alias("movie_avg"))
+    return (rows_df.join(user_hist, "UserID", "left")
+                   .join(movie_hist, "MovieID", "left")
+                   .fillna(0, ["user_count", "movie_count"]))
 
 
 def fallback_value(train_df):

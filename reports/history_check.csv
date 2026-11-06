@@ -1,0 +1,3 @@
+check,changed_row,passed
+strictly earlier history,b,True
+scoring history independent of outcomes,all scoring rows,True

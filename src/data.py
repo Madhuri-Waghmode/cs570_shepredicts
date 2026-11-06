@@ -46,6 +46,7 @@ def apply_repairs(ratings_df, users_df, movies_df):
     Out: tuple of (ratings_df, users_df, movies_df) after the repairs
     """
 
+    # D1 found no duplicates, orphan keys, nulls, or out-of-domain values, so nothing is changed.
     return ratings_df, users_df, movies_df
 
 
@@ -69,7 +70,7 @@ def add_label(df):
          all other columns and values.
     """
 
-    raise NotImplementedError("add_label")
+    return df.withColumn("label", F.when(F.col("Rating") >= 4, 1).otherwise(0))
 
 
 def load_ratings(spark):
