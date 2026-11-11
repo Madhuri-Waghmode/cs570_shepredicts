@@ -53,7 +53,7 @@ def fallback_value(train_df):
     Out: float
     """
 
-    raise NotImplementedError("fallback_value")
+    return train_df.agg(F.avg("Rating")).first()[0]
 
 
 def fill_history(df, fallback):
@@ -64,7 +64,10 @@ def fill_history(df, fallback):
     Out: DataFrame with user_new and movie_new added and no null in user_avg or movie_avg
     """
 
-    raise NotImplementedError("fill_history")
+    df = df.fillna(0, subset=["user_count", "movie_count"])
+    df = df.withColumn("user_new", F.when(F.col("user_count") == 0, 1).otherwise(0))
+    df = df.withColumn("movie_new", F.when(F.col("movie_count") == 0, 1).otherwise(0))
+    return df.fillna(fallback, subset=["user_avg", "movie_avg"])
 
 
 def genre_list(train_df):
