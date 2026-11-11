@@ -1,0 +1,4 @@
+breakdown,rows,majority,rule,rule_threshold
+overall,113487,0.5754,0.684,3.5
+both_histories,28397,0.5377,0.6782,3.5
+fallback,85090,0.588,0.6859,3.5
