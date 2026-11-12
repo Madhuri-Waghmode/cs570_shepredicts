@@ -1,9 +1,7 @@
-"""
-evaluate.py — The threshold of the single-feature rule and the accuracy breakdown of the baselines.
 
-Every function that raises NotImplementedError is the team's work; keep its name, arguments, and output as the
-docstring states.
-"""
+"""Evaluation helpers for D2."""
+
+import pandas as pd
 import pyspark.sql.functions as F
 
 import cs570_helpers as h
@@ -11,22 +9,72 @@ import cs570_helpers as h
 
 def choose_rule_threshold(train_df, thresholds):
     """
-    Purpose: Choose the threshold of the single-feature rule, predict 1 when movie_avg >= t, with the highest accuracy
-             on the training rows. On an exact accuracy tie, choose the lower threshold, regardless of list order.
-    In: train_df (DataFrame) training rows with movie_avg and label; thresholds (list of float) candidates
-    Out: float, the chosen threshold
+    Choose the threshold with the highest training accuracy.
+    On ties, choose the lower threshold.
     """
+    if not thresholds:
+        raise ValueError("thresholds must not be empty")
 
-    raise NotImplementedError("choose_rule_threshold")
+    best_threshold = None
+    best_accuracy = -1.0
+
+    for t in sorted(thresholds):
+        accuracy = train_df.select(
+            F.avg(
+                (F.col("movie_avg") >= F.lit(t))
+                .cast("int")
+                .eqNullSafe(F.col("label").cast("int"))
+                .cast("double")
+            ).alias("accuracy")
+        ).first()["accuracy"]
+
+        if accuracy is not None and accuracy > best_accuracy:
+            best_accuracy = accuracy
+            best_threshold = t
+
+    if best_threshold is None:
+        raise ValueError("No valid training rows to evaluate")
+
+    return float(best_threshold)
 
 
 def accuracy_breakdown(df, predictions):
     """
-    Purpose: Accuracy of one or more 0/1 predictions on the same rows: overall, on rows with both histories, and on
-             rows that use a fallback value (user_new or movie_new equal to 1).
-    In: df (DataFrame) rows with label, user_new, movie_new; predictions (dict) name to a Spark Column of 0/1 values
-    Out: pandas DataFrame indexed by breakdown (overall, both_histories, fallback), with a column rows and one column per
-         prediction, accuracies rounded to 4 decimals
+    Calculate accuracy overall, for both histories,
+    and for fallback rows.
     """
+    both = (F.col("user_new") == 0) & (F.col("movie_new") == 0)
+    fallback = (F.col("user_new") == 1) | (F.col("movie_new") == 1)
 
-    raise NotImplementedError("accuracy_breakdown")
+    groups = {
+        "overall": df,
+        "both_histories": df.filter(both),
+        "fallback": df.filter(fallback),
+    }
+
+    results = []
+
+    for group_name, subset in groups.items():
+        expressions = [F.count("*").alias("rows")]
+
+        for name, prediction in predictions.items():
+            correct = (
+                prediction.cast("int")
+                .eqNullSafe(F.col("label").cast("int"))
+            )
+            expressions.append(
+                F.avg(correct.cast("double")).alias(name)
+            )
+
+        values = subset.agg(*expressions).first().asDict()
+        values["breakdown"] = group_name
+
+        for name in predictions:
+            if values[name] is not None:
+                values[name] = round(values[name], 4)
+
+        results.append(values)
+
+    return pd.DataFrame(results).set_index("breakdown").loc[
+        ["overall", "both_histories", "fallback"]
+    ]
